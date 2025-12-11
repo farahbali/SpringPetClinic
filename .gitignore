@@ -1,16 +1,45 @@
-target/*
-.settings/*
-.classpath
-.project
-.factorypath
-.attach_pid*
-.idea
+nano .gitignore
+```
+
+Copy and paste this content:
+```
+# Compiled files
+target/
+*.class
+*.jar
+*.war
+
+# IDE files
+.idea/
+.vscode/
 *.iml
-/target
-.sts4-cache/
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-_site/
+.DS_Store
+
+# Log files
+*.log
+app.log
+app.pid
+
+# Chrome installer (we don't need this in repo)
+*.deb
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# Node modules (if any)
+node_modules/
+
+# Environment files
+.env
+*.env
+
+# Test reports
+test-output/
+surefire-reports/
