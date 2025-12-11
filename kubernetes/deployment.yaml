@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: springpetclinic-deployment
+  labels:
+    app: springpetclinic
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: springpetclinic
+  template:
+    metadata:
+      labels:
+        app: springpetclinic
+    spec:
+      containers:
+      - name: springpetclinic
+        image: YOUR_DOCKERHUB_USERNAME/springpetclinic:latest
+        ports:
+        - containerPort: 8080
+        imagePullPolicy: Always
