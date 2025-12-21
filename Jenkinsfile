@@ -13,7 +13,6 @@ pipeline {
     }
 
     stages {
-
         stage('Checkout') {
             steps {
                 echo '📥 Checking out code from GitHub...'
@@ -103,22 +102,23 @@ EOF
             }
         }
 
-     stage('Push to Docker Hub') {
-    steps {
-        echo '📤 Pushing image to Docker Hub...'
-        withCredentials([usernamePassword(
-            credentialsId: 'dockerhub-credentials',
-            usernameVariable: 'DOCKER_USER',
-            passwordVariable: 'DOCKER_PASS'
-        )]) {
-            sh '''
-                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                docker push farahbali/springpetclinic:latest
-            '''
+        stage('Push to Docker Hub') {
+            steps {
+                echo '📤 Pushing image to Docker Hub...'
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                    '''
+                }
+            }
         }
-    }
-}
-         stage('Deploy to Kubernetes (Minikube)') {
+
+        stage('Deploy to Kubernetes (Minikube)') {
             steps {
                 echo '☸️ Deploying to Kubernetes...'
                 sh '''
@@ -138,8 +138,6 @@ EOF
                 '''
             }
         }
-    }
-
     }
 
     post {
