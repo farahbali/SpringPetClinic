@@ -133,16 +133,51 @@ EOF
             }
         }
         
-        stage('Push to Docker Hub') {
-            steps {
-                echo '📤 Pushing image to Docker Hub...'
-                script {
+      stage('Push to Docker Hub') {
+    steps {
+        echo '📤 Pushing image to Docker Hub...'
+        
+        script {
+            // Method 1: Use Jenkins Docker Pipeline (with timeout)
+            timeout(time: 3, unit: 'MINUTES') {
+                try {
                     docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-credentials') {
                         docker.image("${IMAGE_NAME}:${IMAGE_TAG}").push()
+                    }
+                    echo "✅ Push successful!"
+                } catch (Exception e) {
+                    echo "⚠️ Method 1 failed: ${e.message}"
+                    
+                    // Method 2: Direct docker push with login
+                    withCredentials([usernamePassword(
+                        credentialsId: 'dockerhub-credentials',
+                        usernameVariable: 'DOCKERHUB_USER',
+                        passwordVariable: 'DOCKERHUB_PASS'
+                    )]) {
+                        sh '''
+                            # Login fresh
+                            echo "${DOCKERHUB_PASS}" | docker login -u "${DOCKERHUB_USER}" --password-stdin
+                            
+                            # Push with retry logic
+                            echo "Starting docker push..."
+                            for i in {1..3}; do
+                                echo "Attempt $i/3"
+                                if timeout 60s docker push ${IMAGE_NAME}:${IMAGE_TAG}; then
+                                    echo "✅ Push succeeded on attempt $i"
+                                    exit 0
+                                else
+                                    echo "⚠️ Push attempt $i failed or timed out"
+                                    sleep 5
+                                fi
+                            done
+                            echo "❌ All push attempts failed"
+                        '''
                     }
                 }
             }
         }
+    }
+}
         
         stage('Deploy to Kubernetes') {
             steps {
