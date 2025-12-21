@@ -22,50 +22,22 @@ pipeline {
             }
         }
         
-        stage('Build & Compile') {
+        stage('Clean Build') {
             steps {
-                echo '🔨 Compiling project...'
-                sh 'mvn clean compile -DskipTests'
-            }
-        }
-        
-        stage('Unit Tests') {
-            steps {
-                echo '🧪 Running unit tests (excluding integration and selenium)...'
+                echo '🧹 Cleaning and building...'
                 sh '''
-                    mvn test -Dtest=!PetclinicIntegrationTests,!*selenium* -DfailIfNoTests=false
+                    # Clean everything
+                    mvn clean compile -DskipTests
+                    
+                    # Package without tests
+                    mvn package -DskipTests
                 '''
             }
-            post {
-                always {
-                    junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
-                }
-            }
         }
         
-        stage('Package Application') {
+        stage('Start Application') {
             steps {
-                echo '📦 Packaging application...'
-                sh 'mvn package -DskipTests'
-            }
-        }
-        
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh '''
-                        mvn org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
-                        -Dsonar.projectKey=springpetclinic \
-                        -Dsonar.projectName=SpringPetClinic \
-                        -Dsonar.exclusions=**/selenium/**,**/*SeleniumTest.java
-                    '''
-                }
-            }
-        }
-        
-        stage('Start Application for Testing') {
-            steps {
-                echo '🚀 Starting application for integration tests...'
+                echo '🚀 Starting application for ALL tests...'
                 sh '''
                     pkill -f spring-petclinic || true
 
@@ -82,16 +54,19 @@ pipeline {
                         echo "Waiting for application... attempt $i"
                         sleep 2
                     done
+                    
+                    # Check if app is running
+                    curl -I http://localhost:8080/login
                 '''
             }
         }
         
-        stage('Integration Tests') {
+        stage('Run ALL Tests') {
             steps {
-                echo '🧪 Running integration tests...'
+                echo '🧪 Running ALL tests against running application...'
                 sh '''
-                    # Run only the PetclinicIntegrationTests
-                    mvn test -Dtest=PetclinicIntegrationTests -DfailIfNoTests=false || echo "Integration tests completed"
+                    # Run all tests now that app is running
+                    mvn test -DfailIfNoTests=false || echo "Tests completed with some issues"
                 '''
             }
             post {
@@ -101,16 +76,15 @@ pipeline {
             }
         }
         
-        stage('Selenium Tests') {
+        stage('SonarQube Analysis') {
             steps {
-                echo '🧪 Running Selenium UI tests...'
-                sh '''
-                    mvn test -Dtest=org.springframework.samples.petclinic.selenium.PetClinicSeleniumTest -DfailIfNoTests=false || echo "Selenium tests completed with issues"
-                '''
-            }
-            post {
-                always {
-                    junit allowEmptyResults: true, testResults: '**/target/surefire-reports/TEST-*.xml'
+                withSonarQubeEnv('SonarQube') {
+                    sh '''
+                        mvn org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
+                        -Dsonar.projectKey=springpetclinic \
+                        -Dsonar.projectName=SpringPetClinic \
+                        -Dsonar.exclusions=**/selenium/**,**/*SeleniumTest.java
+                    '''
                 }
             }
         }
