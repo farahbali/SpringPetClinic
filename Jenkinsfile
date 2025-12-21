@@ -47,26 +47,23 @@ pipeline {
 }
 
         
-        stage('Start Application for Testing') {
-            steps {
-                echo '🚀 Starting application for Selenium tests...'
-                sh '''
-                    # Kill any existing process on port 8080
-                    pkill -f 'spring-petclinic' || true
-                    
-                    # Start the application in background
-                    nohup java -jar target/*.jar > app.log 2>&1 &
-                    echo $! > app.pid
-                    
-                    # Wait for application to start
-                    echo "Waiting for application to start..."
-                    sleep 30
-                    
-                    # Check if app is running
-                    curl -f http://localhost:8080 || exit 1
-                '''
-            }
-        }
+       stage('Start Application for Testing') {
+    steps {
+        echo '🚀 Starting application for Selenium tests...'
+        sh '''
+            pkill -f spring-petclinic || true
+
+            nohup java -jar target/*.jar > app.log 2>&1 &
+            echo $! > app.pid
+
+            echo "Waiting for application to start..."
+            sleep 30
+
+            curl -f http://localhost:8080/login
+        '''
+    }
+}
+
         
         stage('Selenium Tests') {
             steps {
