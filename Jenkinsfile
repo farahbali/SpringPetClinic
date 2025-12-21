@@ -141,35 +141,32 @@ pipeline {
         }
     }
     
-    post {
-        failure {
-            echo '❌ Pipeline failed! Sending notification email...'
-            emailext (
-                subject: "❌ Jenkins Build Failed: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
-                body: """
-                    <h2>Build Failed!</h2>
-                    <p><strong>Job:</strong> ${env.JOB_NAME}</p>
-                    <p><strong>Build Number:</strong> ${env.BUILD_NUMBER}</p>
-                    <p><strong>Build URL:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                    <p><strong>Console Output:</strong> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
-                    <hr>
-                    <h3>Build Log (Last 100 lines):</h3>
-                    <pre>${BUILD_LOG, maxLines=100}</pre>
-                    <hr>
-                    <p>Please check the console output for details.</p>
-                """,
-                to: 'balifarah2001@gamil.com',
-                from: 'jenkins@devops.com',
-                replyTo: 'jenkins@devops.com',
-                mimeType: 'text/html'
-            )
-        }
-        success {
-            echo '✅ Pipeline completed successfully!'
-        }
-        always {
-            echo '🧹 Cleaning up...'
-            sh 'docker system prune -f || true'
-        }
+post {
+    failure {
+        echo '❌ Pipeline failed! Sending notification email...'
+        emailext (
+            subject: "❌ Jenkins Build Failed: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
+            body: """
+                <h2>Build Failed</h2>
+                <p><strong>Job:</strong> ${env.JOB_NAME}</p>
+                <p><strong>Build Number:</strong> ${env.BUILD_NUMBER}</p>
+                <p><strong>Build URL:</strong>
+                <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                <p>Please check the console output for details.</p>
+            """,
+            to: 'balifarah2001@gmail.com',
+            mimeType: 'text/html'
+        )
     }
+
+    success {
+        echo '✅ Pipeline completed successfully!'
+    }
+
+    always {
+        echo '🧹 Cleaning up...'
+        sh 'docker system prune -f || true'
+    }
+}
+
 }
