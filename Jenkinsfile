@@ -14,14 +14,12 @@ pipeline {
     }
     
     stages {
-      stage('Checkout') {
-       steps {
-           echo '📥 Checking out code from GitHub...'
-           checkout scm
-           sh 'ls -la'
-           sh 'echo "Current directory: $(pwd)"'
-           sh 'echo "Dockerfile exists:" && ls -la Dockerfile'
-       }
+   stage('Checkout') {
+            steps {
+                echo '📥 Checking out code from GitHub...'
+                git branch: 'master', 
+                    url: 'https://github.com/farahbali/SpringPetClinic.git'
+            }
    }
         
         stage('Build & Unit Tests') {
