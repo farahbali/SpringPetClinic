@@ -1,33 +1,4 @@
 package org.springframework.samples.petclinic.selenium;
-```
-
-4. Scroll to bottom, click **Commit changes**
-   - Commit message: `Fix test package declaration`
-   - Click green **Commit changes** button
-
----
-
-### Step 2: Move the File to Correct Location
-
-Now we need to move the file to match the package structure.
-
-1. Go to the same file again: `src/test/java/selenium/PetClinicSeleniumTest.java`
-
-2. Click the **pencil icon** ✏️ to edit
-
-3. Look at the **file path bar** at the top of the editor where it shows:
-```
-   SpringPetClinic / src / test / java / selenium / PetClinicSeleniumTest.java
-```
-
-4. **Click on the filename** `PetClinicSeleniumTest.java` in that path bar
-
-5. **Backspace** to delete `selenium/PetClinicSeleniumTest.java`
-
-6. **Type the new path:**
-```
-   org/springframework/samples/petclinic/selenium/PetClinicSeleniumTest.java
-
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
