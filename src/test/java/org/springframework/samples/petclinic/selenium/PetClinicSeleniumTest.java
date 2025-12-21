@@ -1,4 +1,5 @@
 package org.springframework.samples.petclinic.selenium;
+
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -11,7 +12,7 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 import io.github.bonigarcia.wdm.WebDriverManager;
-import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 public class PetClinicSeleniumTest {
     
@@ -21,10 +22,8 @@ public class PetClinicSeleniumTest {
     
     @BeforeClass
     public void setUp() {
-        // Setup ChromeDriver
         WebDriverManager.chromedriver().setup();
         
-        // Configure Chrome options for headless mode (important for Jenkins)
         ChromeOptions options = new ChromeOptions();
         options.addArguments("--headless");
         options.addArguments("--no-sandbox");
@@ -33,8 +32,8 @@ public class PetClinicSeleniumTest {
         options.addArguments("--window-size=1920,1080");
         
         driver = new ChromeDriver(options);
-        wait = new WebDriverWait(driver, Duration.ofSeconds(10));
-        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(10));
+        wait = new WebDriverWait(driver, 10);
+        driver.manage().timeouts().implicitlyWait(10, TimeUnit.SECONDS);
     }
     
     @Test(priority = 1)
@@ -88,7 +87,6 @@ public class PetClinicSeleniumTest {
         Assert.assertTrue(currentUrl.contains("/vets"), 
             "Should navigate to veterinarians page");
         
-        // Verify table is present
         WebElement vetsTable = wait.until(
             ExpectedConditions.presenceOfElementLocated(By.tagName("table"))
         );
@@ -100,13 +98,11 @@ public class PetClinicSeleniumTest {
     public void testNavigationLinks() {
         driver.get(baseUrl);
         
-        // Check if navigation bar exists
         WebElement navbar = wait.until(
             ExpectedConditions.presenceOfElementLocated(By.tagName("nav"))
         );
         Assert.assertNotNull(navbar, "Navigation bar should be present");
         
-        // Verify at least 3 navigation links exist
         int linkCount = driver.findElements(By.cssSelector("nav a")).size();
         Assert.assertTrue(linkCount >= 3, 
             "Should have at least 3 navigation links");
