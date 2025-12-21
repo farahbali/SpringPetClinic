@@ -136,13 +136,11 @@ EOF
         stage('Push to Docker Hub') {
             steps {
                 echo '📤 Pushing image to Docker Hub...'
-                sh '''
-                    # Login to Docker Hub
-                    echo "${DOCKERHUB_CREDENTIALS_PSW}" | docker login -u "${DOCKERHUB_CREDENTIALS_USR}" --password-stdin
-                    
-                    # Push the image
-                    docker push ${IMAGE_NAME}:${IMAGE_TAG}
-                '''
+                script {
+                    docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-credentials') {
+                        docker.image("${IMAGE_NAME}:${IMAGE_TAG}").push()
+                    }
+                }
             }
         }
         
