@@ -122,22 +122,17 @@ EOF
             steps {
                 echo '☸️ Deploying to Kubernetes...'
                 sh '''
-                    # Start minikube if not running
-                    minikube status || minikube start --driver=docker
-
-                    # Apply Kubernetes manifests
+                    # IMPORTANT: Minikube must already be running
                     kubectl apply -f kubernetes/deployment.yaml
                     kubectl apply -f kubernetes/service.yaml
 
-                    # Wait for deployment
                     kubectl rollout status deployment/springpetclinic-deployment
-
-                    # Display status
                     kubectl get pods
                     kubectl get services
                 '''
             }
         }
+    
     }
 
     post {
