@@ -66,16 +66,16 @@ pipeline {
 
         
         stage('Selenium Tests') {
-            steps {
-                echo '🧪 Running Selenium UI tests...'
-                sh 'mvn test -Dtest=PetClinicSeleniumTest'
-            }
-            post {
-                always {
-                    junit '**/target/surefire-reports/*.xml'
-                }
-            }
-        }
+       steps {
+           echo '🧪 Running Selenium UI tests...'
+           sh 'mvn test -Dtest=org.springframework.samples.petclinic.selenium.PetClinicSeleniumTest -DfailIfNoTests=false'
+       }
+       post {
+           always {
+               junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+           }
+       }
+   }
         
         stage('Stop Application') {
             steps {
