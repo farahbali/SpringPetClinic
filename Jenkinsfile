@@ -14,56 +14,49 @@ pipeline {
 
     stages {
 
+        /* ===================== */
+        /* 1️⃣ CHECKOUT SOURCE   */
+        /* ===================== */
         stage('Checkout') {
             steps {
-                echo '📥 Checking out code from GitHub...'
+                echo '📥 Cloning GitHub repository...'
                 git branch: 'master',
                     url: 'https://github.com/farahbali/SpringPetClinic.git'
             }
         }
 
-        stage('Build Application') {
+        /* ===================== */
+        /* 2️⃣ BUILD APPLICATION */
+        /* ===================== */
+        stage('Build') {
             steps {
                 echo '🧱 Building Spring Boot application...'
-                sh '''
-                    mvn clean package -DskipTests
-                '''
+                sh 'mvn clean package -DskipTests'
             }
         }
 
-        stage('Start Application') {
+        /* ===================== */
+        /* 3️⃣ RUN TESTS         */
+        /* ===================== */
+        stage('Tests') {
             steps {
-                echo '🚀 Starting application...'
-                sh '''
-                    pkill -f spring-petclinic || true
-
-                    nohup java -jar target/*.jar > app.log 2>&1 &
-                    echo $! > app.pid
-
-                    echo "Waiting for application to start..."
-                    sleep 30
-
-                    curl -I http://localhost:8080 || exit 1
-                '''
-            }
-        }
-
-        stage('Run Tests') {
-            steps {
-                echo '🧪 Running tests...'
-                sh '''
-                    mvn test -DfailIfNoTests=false || true
-                '''
+                echo '🧪 Running unit tests...'
+                sh 'mvn test -DfailIfNoTests=false'
             }
             post {
                 always {
-                    junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                    junit allowEmptyResults: true,
+                          testResults: '**/target/surefire-reports/*.xml'
                 }
             }
         }
 
+        /* ===================== */
+        /* 4️⃣ SONARQUBE         */
+        /* ===================== */
         stage('SonarQube Analysis') {
             steps {
+                echo '🔍 Running SonarQube analysis...'
                 withSonarQubeEnv('SonarQube') {
                     sh '''
                         mvn sonar:sonar \
@@ -74,18 +67,9 @@ pipeline {
             }
         }
 
-        stage('Stop Application') {
-            steps {
-                echo '🛑 Stopping application...'
-                sh '''
-                    if [ -f app.pid ]; then
-                        kill $(cat app.pid) || true
-                        rm app.pid
-                    fi
-                '''
-            }
-        }
-
+        /* ===================== */
+        /* 5️⃣ DOCKER BUILD      */
+        /* ===================== */
         stage('Build Docker Image') {
             steps {
                 echo '🐳 Building Docker image...'
@@ -103,10 +87,10 @@ EOF
             }
         }
 
-        stage('Push to Docker Hub') {
-            when {
-                branch 'master'
-            }
+        /* ===================== */
+        /* 6️⃣ DOCKER PUSH       */
+        /* ===================== */
+        stage('Push Docker Image') {
             steps {
                 echo '📤 Pushing image to Docker Hub...'
                 withCredentials([usernamePassword(
@@ -121,14 +105,38 @@ EOF
                 }
             }
         }
+
+        /* ===================== */
+        /* 7️⃣ KUBERNETES DEPLOY */
+        /* ===================== */
+        stage('Deploy to Kubernetes (Minikube)') {
+            steps {
+                echo '☸️ Deploying to Kubernetes...'
+                sh '''
+                    # Start minikube if not running
+                    minikube status || minikube start --driver=docker
+
+                    # Apply Kubernetes manifests
+                    kubectl apply -f kubernetes/deployment.yaml
+                    kubectl apply -f kubernetes/service.yaml
+
+                    # Wait for deployment
+                    kubectl rollout status deployment/springpetclinic-deployment
+
+                    # Display status
+                    kubectl get pods
+                    kubectl get services
+                '''
+            }
+        }
     }
 
     post {
         success {
-            echo '✅ Pipeline completed successfully!'
+            echo '✅ FULL CI/CD PIPELINE SUCCESS (BUILD → TEST → SONAR → DOCKER → K8S)'
         }
         failure {
-            echo '❌ Pipeline failed. Check logs.'
+            echo '❌ Pipeline failed – check Jenkins console output'
         }
     }
 }
