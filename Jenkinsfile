@@ -105,20 +105,44 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 echo '🐳 Building Docker image...'
-                script {
-                    docker.build("${IMAGE_NAME}:${IMAGE_TAG}")
-                }
+                sh '''
+                    # Create Dockerfile with Amazon Corretto (most reliable)
+                    cat > Dockerfile << 'EOF'
+# Use Amazon Corretto JDK 17
+FROM amazoncorretto:17-alpine3.17
+
+# Set working directory
+WORKDIR /app
+
+# Copy the JAR file
+COPY target/*.jar app.jar
+
+# Expose port
+EXPOSE 8080
+
+# Run the application
+ENTRYPOINT ["java", "-jar", "app.jar"]
+EOF
+                    
+                    echo "=== Dockerfile content ==="
+                    cat Dockerfile
+                    
+                    # Build the image
+                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                '''
             }
         }
         
         stage('Push to Docker Hub') {
             steps {
                 echo '📤 Pushing image to Docker Hub...'
-                script {
-                    docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-credentials') {
-                        docker.image("${IMAGE_NAME}:${IMAGE_TAG}").push()
-                    }
-                }
+                sh '''
+                    # Login to Docker Hub
+                    echo "${DOCKERHUB_CREDENTIALS_PSW}" | docker login -u "${DOCKERHUB_CREDENTIALS_USR}" --password-stdin
+                    
+                    # Push the image
+                    docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                '''
             }
         }
         
