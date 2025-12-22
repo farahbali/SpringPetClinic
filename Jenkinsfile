@@ -177,7 +177,7 @@ EOF
                     <p><strong>Console Output:</strong> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
                     <hr>
                     <h3>Error Details:</h3>
-                    <pre style="background-color: #f4f4f4; padding: 10px;">${BUILD_LOG, maxLines=100}</pre>
+                    <pre style="background-color: #f4f4f4; padding: 10px;">${currentBuild.buildLog}</pre>
                     <hr>
                     <p>Please check the console output for detailed error information.</p>
                     <p><em>Build failed at: ${new Date()}</em></p>
