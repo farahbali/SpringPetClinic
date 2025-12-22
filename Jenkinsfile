@@ -124,16 +124,19 @@ stage('Push to Docker Hub') {
 
 
 
-        stage('Deploy to Kubernetes (Minikube)') {
-            steps {
-                echo '☸️ Deploying to Kubernetes...'
-                sh '''
-                    kubectl apply -f kubernetes/deployment.yaml
-                    kubectl apply -f kubernetes/service.yaml
-                    kubectl rollout status deployment/springpetclinic-deployment
-                '''
-            }
+stage('Deploy to Kubernetes (Minikube)') {
+    steps {
+        echo '☸️ Deploying to Kubernetes...'
+        withEnv(['KUBECONFIG=/home/farah/.kube/config']) {
+            sh '''
+                kubectl apply -f kubernetes/deployment.yaml
+                kubectl apply -f kubernetes/service.yaml
+                kubectl rollout status deployment/springpetclinic-deployment
+            '''
         }
+    }
+}
+
     }
 
     post {
