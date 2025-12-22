@@ -123,20 +123,21 @@ stage('Push to Docker Hub') {
 }
 
 
-
 stage('Deploy to Kubernetes (Minikube)') {
     steps {
         echo '☸️ Deploying to Kubernetes...'
         withEnv(['KUBECONFIG=/home/farah/.kube/config']) {
-            sh '''
-                # Replace image tag dynamically with current build number
-                sed -i "s|IMAGE_TAG|${BUILD_NUMBER}|g" kubernetes/deployment.yaml
-
-                kubectl apply -f kubernetes/deployment.yaml
+            sh """
+                # Replace placeholder in deployment.yaml
+                sed -i 's|IMAGE_TAG|${BUILD_NUMBER}|g' kubernetes/deployment.yaml
+                
+                # Apply manifests
                 kubectl apply -f kubernetes/service.yaml
-
+                kubectl apply -f kubernetes/deployment.yaml
+                
+                # Check rollout status
                 kubectl rollout status deployment/springpetclinic-deployment
-            '''
+            """
         }
     }
 }
