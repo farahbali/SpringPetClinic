@@ -30,73 +30,19 @@ pipeline {
             }
         }
 
-        stage('Start Application') {
+       stage('Start Application') {
             steps {
                 echo '🚀 Starting application...'
                 sh '''
-                    # Kill any existing instance
                     pkill -f spring-petclinic || true
-                    sleep 2
-                    
-                    # Check if port 8080 is already in use
-                    if netstat -tuln | grep :8080 > /dev/null; then
-                        echo "Port 8080 is already in use, trying to free it..."
-                        fuser -k 8080/tcp || true
-                        sleep 2
-                    fi
-                    
-                    # Start application in background
-                    echo "Starting application..."
+
                     nohup java -jar target/*.jar > app.log 2>&1 &
-                    APP_PID=$!
-                    echo $APP_PID > app.pid
-                    
-                    echo "Application PID: $APP_PID"
+                    echo $! > app.pid
+
                     echo "Waiting for application to start..."
-                    
-                    # Wait for application to be ready with timeout
-                    MAX_WAIT=90
-                    WAIT_INTERVAL=5
-                    ATTEMPTS=$((MAX_WAIT / WAIT_INTERVAL))
-                    
-                    for i in $(seq 1 $ATTEMPTS); do
-                        sleep $WAIT_INTERVAL
-                        
-                        # Check if process is still running
-                        if ! ps -p $APP_PID > /dev/null; then
-                            echo "❌ Application process died!"
-                            echo "Application logs:"
-                            cat app.log
-                            exit 1
-                        fi
-                        
-                        # Try to access health endpoint
-                        if curl -s -f http://localhost:8080/actuator/health > /dev/null 2>&1; then
-                            echo "✅ Application health check passed!"
-                            HEALTH_RESPONSE=$(curl -s http://localhost:8080/actuator/health)
-                            echo "Health Status: $HEALTH_RESPONSE"
-                            break
-                        fi
-                        
-                        # Also try the main endpoint
-                        if curl -s -f http://localhost:8080 > /dev/null 2>&1; then
-                            echo "✅ Application is responding!"
-                            break
-                        fi
-                        
-                        echo "Waiting for application... ($((i * WAIT_INTERVAL))s/$MAX_WAIT s)"
-                        
-                        if [ $i -eq $ATTEMPTS ]; then
-                            echo "❌ Application failed to start within $MAX_WAIT seconds"
-                            echo "Last 100 lines of logs:"
-                            tail -100 app.log
-                            echo "Checking port 8080:"
-                            netstat -tuln | grep :8080 || echo "Port 8080 not listening"
-                            exit 1
-                        fi
-                    done
-                    
-                    echo "✅ Application started successfully!"
+                    sleep 30
+
+                    curl -I http://localhost:8080 || exit 1
                 '''
             }
         }
