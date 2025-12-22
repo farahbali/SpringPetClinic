@@ -24,7 +24,9 @@ pipeline {
         stage('Build Application') {
             steps {
                 echo '🧱 Building Spring Boot application...'
-                sh 'mvn clean package -DskipTests'
+                sh '''
+                    mvn clean package -DskipTests
+                '''
             }
         }
 
@@ -33,25 +35,14 @@ pipeline {
                 echo '🚀 Starting application...'
                 sh '''
                     pkill -f spring-petclinic || true
-                    fuser -k 8080/tcp || true
-                    sleep 5
 
                     nohup java -jar target/*.jar > app.log 2>&1 &
                     echo $! > app.pid
 
                     echo "Waiting for application to start..."
-                    for i in {1..60}; do
-                        if curl -f http://localhost:8080 >/dev/null 2>&1; then
-                            echo "Application started successfully!"
-                            exit 0
-                        fi
-                        echo "Waiting... ($i/60)"
-                        sleep 2
-                    done
-                    
-                    echo "Application failed to start!"
-                    cat app.log
-                    exit 1
+                    sleep 30
+
+                    curl -I http://localhost:8080 || exit 1
                 '''
             }
         }
@@ -59,7 +50,9 @@ pipeline {
         stage('Run Tests') {
             steps {
                 echo '🧪 Running tests...'
-                sh 'mvn test -DfailIfNoTests=false || true'
+                sh '''
+                    mvn test -DfailIfNoTests=false || true
+                '''
             }
             post {
                 always {
@@ -70,15 +63,11 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
-                echo '📊 Running SonarQube analysis...'
-                withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+                withSonarQubeEnv('SonarQube') {
                     sh '''
-                        mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:3.9.1.2184:sonar \
+                        mvn sonar:sonar \
                         -Dsonar.projectKey=springpetclinic \
-                        -Dsonar.projectName=SpringPetClinic \
-                        -Dsonar.host.url=http://localhost:9000 \
-                        -Dsonar.token=${SONAR_TOKEN} \
-                        -Dsonar.java.binaries=target/classes
+                        -Dsonar.projectName=SpringPetClinic
                     '''
                 }
             }
@@ -92,8 +81,6 @@ pipeline {
                         kill $(cat app.pid) || true
                         rm app.pid
                     fi
-                    pkill -f spring-petclinic || true
-                    fuser -k 8080/tcp || true
                 '''
             }
         }
@@ -102,15 +89,13 @@ pipeline {
             steps {
                 echo '🐳 Building Docker image...'
                 sh '''
-                    if [ ! -f Dockerfile ]; then
-                        cat > Dockerfile << 'EOF'
+                    cat > Dockerfile << 'EOF'
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 COPY target/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","app.jar"]
 EOF
-                    fi
 
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                 '''
@@ -128,97 +113,34 @@ EOF
                     sh '''
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
                         docker push ${IMAGE_NAME}:${IMAGE_TAG}
-                        docker logout
                     '''
                 }
             }
         }
 
-        stage('Deploy to Kubernetes') {
+        stage('Deploy to Kubernetes (Minikube)') {
             steps {
                 echo '☸️ Deploying to Kubernetes...'
                 sh '''
-                    sed -i "s|image:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|g" kubernetes/deployment.yaml
-                    
+                    # IMPORTANT: Minikube must already be running
                     kubectl apply -f kubernetes/deployment.yaml
                     kubectl apply -f kubernetes/service.yaml
 
-                    kubectl rollout status deployment/springpetclinic-deployment --timeout=5m
-                    
-                    echo "=== Deployments ==="
-                    kubectl get deployments
-                    echo ""
-                    echo "=== Pods ==="
+                    kubectl rollout status deployment/springpetclinic-deployment
                     kubectl get pods
-                    echo ""
-                    echo "=== Services ==="
                     kubectl get services
-                    echo ""
-                    echo "=== Application URL ==="
-                    minikube service springpetclinic-service --url || echo "Get URL: minikube service springpetclinic-service --url"
                 '''
             }
         }
+    
     }
 
     post {
         success {
             echo '✅ Pipeline completed successfully!'
-            emailext (
-                subject: "✅ Jenkins Build SUCCESS: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
-                body: """
-                    <h2 style="color: green;">Build Successful! 🎉</h2>
-                    <p><strong>Job:</strong> ${env.JOB_NAME}</p>
-                    <p><strong>Build Number:</strong> ${env.BUILD_NUMBER}</p>
-                    <p><strong>Build URL:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                    <hr>
-                    <h3>Deployment Details:</h3>
-                    <ul>
-                        <li>Docker Image: ${IMAGE_NAME}:${IMAGE_TAG}</li>
-                        <li>Deployed to Kubernetes/Minikube</li>
-                        <li>All stages completed successfully</li>
-                    </ul>
-                    <p>Application is now running in Kubernetes cluster.</p>
-                """,
-                to: 'balifarah2001@gmail.com',
-                from: 'jenkins@devops.com',
-                replyTo: 'jenkins@devops.com',
-                mimeType: 'text/html'
-            )
         }
-        
         failure {
-            echo '❌ Pipeline failed! Sending notification email...'
-            emailext (
-                subject: "❌ Jenkins Build FAILED: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
-                body: """
-                    <h2 style="color: red;">Build Failed! ⚠️</h2>
-                    <p><strong>Job:</strong> ${env.JOB_NAME}</p>
-                    <p><strong>Build Number:</strong> ${env.BUILD_NUMBER}</p>
-                    <p><strong>Build URL:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                    <p><strong>Console Output:</strong> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
-                    <hr>
-                    <h3>Error Details:</h3>
-                    <pre style="background-color: #f4f4f4; padding: 10px;">${BUILD_LOG, maxLines=100}</pre>
-                    <hr>
-                    <p>Please check the console output for detailed error information.</p>
-                    <p><em>Build failed at: ${new Date()}</em></p>
-                """,
-                to: 'balifarah2001@gmail.com',
-                from: 'jenkins@devops.com',
-                replyTo: 'jenkins@devops.com',
-                mimeType: 'text/html',
-                attachLog: true
-            )
-        }
-        
-        always {
-            echo '🧹 Cleaning up...'
-            sh '''
-                pkill -f spring-petclinic || true
-                rm -f app.pid app.log || true
-                docker system prune -f || true
-            '''
+            echo '❌ Pipeline failed. Check logs.'
         }
     }
 }
