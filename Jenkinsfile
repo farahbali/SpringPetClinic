@@ -104,22 +104,25 @@ EOF
                 '''
             }
         }
-
-        stage('Push to Docker Hub') {
-            steps {
-                echo '📤 Pushing image to Docker Hub...'
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-credentials',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh '''
-                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                        docker push ${IMAGE_NAME}:${IMAGE_TAG}
-                    '''
-                }
-            }
+stage('Push to Docker Hub') {
+    steps {
+        echo '📤 Pushing image to Docker Hub...'
+        withCredentials([usernamePassword(
+            credentialsId: 'dockerhub-credentials',
+            usernameVariable: 'DOCKER_USER',
+            passwordVariable: 'DOCKER_PASS'
+        )]) {
+            sh '''
+                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:${BUILD_NUMBER}
+                docker push ${IMAGE_NAME}:${IMAGE_TAG} || { echo "Push failed"; exit 1; }
+                docker push ${IMAGE_NAME}:${BUILD_NUMBER} || { echo "Push failed"; exit 1; }
+            '''
         }
+    }
+}
+
+
 
         stage('Deploy to Kubernetes (Minikube)') {
             steps {
