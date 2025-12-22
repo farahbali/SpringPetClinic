@@ -139,7 +139,7 @@ EOF
     
     }
 
-        post {
+    post {
         success {
             echo '✅ Pipeline completed successfully!'
             emailext (
