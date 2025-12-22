@@ -61,17 +61,21 @@ pipeline {
             }
         }
 
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh '''
-                        mvn sonar:sonar \
-                        -Dsonar.projectKey=springpetclinic \
-                        -Dsonar.projectName=SpringPetClinic
-                    '''
-                }
-            }
+stage('SonarQube Analysis') {
+    steps {
+        echo '📊 Running SonarQube analysis...'
+        withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+            sh '''
+                mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:3.9.1.2184:sonar \
+                -Dsonar.projectKey=springpetclinic \
+                -Dsonar.projectName=SpringPetClinic \
+                -Dsonar.host.url=http://localhost:9000 \
+                -Dsonar.token=${SONAR_TOKEN} \
+                -Dsonar.java.binaries=target/classes
+            '''
         }
+    }
+}
 
         stage('Stop Application') {
             steps {
