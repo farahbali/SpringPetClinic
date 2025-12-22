@@ -15,8 +15,8 @@ spec:
         app: springpetclinic
     spec:
       containers:
-      - name: springpetclinic
-        image: YOUR_DOCKERHUB_USERNAME/springpetclinic:latest
-        ports:
-        - containerPort: 8080
-        imagePullPolicy: Always
+        - name: springpetclinic
+          image: farahbali/springpetclinic:IMAGE_TAG   # <-- placeholder
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
