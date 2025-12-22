@@ -129,13 +129,18 @@ stage('Deploy to Kubernetes (Minikube)') {
         echo '☸️ Deploying to Kubernetes...'
         withEnv(['KUBECONFIG=/home/farah/.kube/config']) {
             sh '''
+                # Replace image tag dynamically with current build number
+                sed -i "s|IMAGE_TAG|${BUILD_NUMBER}|g" kubernetes/deployment.yaml
+
                 kubectl apply -f kubernetes/deployment.yaml
                 kubectl apply -f kubernetes/service.yaml
+
                 kubectl rollout status deployment/springpetclinic-deployment
             '''
         }
     }
 }
+
 
 
     }
