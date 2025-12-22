@@ -24,9 +24,8 @@ pipeline {
         stage('Build Application') {
             steps {
                 echo '🧱 Building Spring Boot application...'
-                sh '''
-                    mvn clean package -DskipTests
-                '''
+                // Skip tests here to save time, we run them later
+                sh 'mvn clean package -DskipTests'
             }
         }
 
@@ -35,7 +34,7 @@ pipeline {
                 echo '🚀 Starting application...'
                 sh '''
                     pkill -f spring-petclinic || true
-
+                    
                     nohup java -jar target/*.jar > app.log 2>&1 &
                     echo $! > app.pid
 
@@ -50,9 +49,8 @@ pipeline {
         stage('Run Tests') {
             steps {
                 echo '🧪 Running tests...'
-                sh '''
-                    mvn test -DfailIfNoTests=false || true
-                '''
+                // Use || true so pipeline continues to post-actions even if tests fail
+                sh 'mvn test -DfailIfNoTests=false || true'
             }
             post {
                 always {
@@ -65,14 +63,15 @@ pipeline {
             steps {
                 echo '📊 Running SonarQube analysis...'
                 withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+                    // FIX: specific plugin version, no clean, no verify (uses existing reports)
                     sh '''
-                        mvn sonar:sonar \
+                        mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.9.1.2184:sonar \
                         -Dsonar.projectKey=springpetclinic \
                         -Dsonar.projectName=SpringPetClinic \
                         -Dsonar.host.url=http://localhost:9000 \
                         -Dsonar.token=${SONAR_TOKEN} \
                         -Dsonar.java.binaries=target/classes \
-                        -Dsonar.junit.reportsPath=target/surefire-reports
+                        -Dsonar.junit.reportPaths=target/surefire-reports
                     '''
                 }
             }
@@ -101,7 +100,6 @@ COPY target/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","app.jar"]
 EOF
-
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                 '''
             }
@@ -127,17 +125,12 @@ EOF
             steps {
                 echo '☸️ Deploying to Kubernetes...'
                 sh '''
-                    # IMPORTANT: Minikube must already be running
                     kubectl apply -f kubernetes/deployment.yaml
                     kubectl apply -f kubernetes/service.yaml
-
                     kubectl rollout status deployment/springpetclinic-deployment
-                    kubectl get pods
-                    kubectl get services
                 '''
             }
         }
-    
     }
 
     post {
@@ -150,13 +143,6 @@ EOF
                     <p><strong>Job:</strong> ${env.JOB_NAME}</p>
                     <p><strong>Build Number:</strong> ${env.BUILD_NUMBER}</p>
                     <p><strong>Build URL:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                    <hr>
-                    <h3>Deployment Details:</h3>
-                    <ul>
-                        <li>Docker Image: ${IMAGE_NAME}:${IMAGE_TAG}</li>
-                        <li>Deployed to Kubernetes/Minikube</li>
-                        <li>All stages completed successfully</li>
-                    </ul>
                     <p>Application is now running in Kubernetes cluster.</p>
                 """,
                 to: 'balifarah2001@gmail.com',
@@ -168,6 +154,7 @@ EOF
         
         failure {
             echo '❌ Pipeline failed! Sending notification email...'
+            // FIX: Removed the crashing ${currentBuild.buildLog} variable
             emailext (
                 subject: "❌ Jenkins Build FAILED: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
                 body: """
@@ -177,11 +164,7 @@ EOF
                     <p><strong>Build URL:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
                     <p><strong>Console Output:</strong> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
                     <hr>
-                    <h3>Error Details:</h3>
-                    <pre style="background-color: #f4f4f4; padding: 10px;">${currentBuild.buildLog}</pre>
-                    <hr>
-                    <p>Please check the console output for detailed error information.</p>
-                    <p><em>Build failed at: ${new Date()}</em></p>
+                    <p>The build log is attached to this email.</p>
                 """,
                 to: 'balifarah2001@gmail.com',
                 from: 'jenkins@devops.com',
