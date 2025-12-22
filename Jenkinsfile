@@ -139,12 +139,67 @@ EOF
     
     }
 
-    post {
+   post {
         success {
             echo '✅ Pipeline completed successfully!'
+            emailext (
+                subject: "✅ Jenkins Build SUCCESS: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
+                body: """
+                    <h2 style="color: green;">Build Successful! 🎉</h2>
+                    <p><strong>Job:</strong> ${env.JOB_NAME}</p>
+                    <p><strong>Build Number:</strong> ${env.BUILD_NUMBER}</p>
+                    <p><strong>Build URL:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                    <hr>
+                    <h3>Deployment Details:</h3>
+                    <ul>
+                        <li>Docker Image: ${IMAGE_NAME}:${IMAGE_TAG}</li>
+                        <li>Deployed to Kubernetes/Minikube</li>
+                        <li>All stages completed successfully</li>
+                    </ul>
+                    <p>Application is now running in Kubernetes cluster.</p>
+                """,
+                to: 'balifarah2001@gmail.com',
+                from: 'jenkins@devops.com',
+                replyTo: 'jenkins@devops.com',
+                mimeType: 'text/html'
+            )
         }
+        
         failure {
-            echo '❌ Pipeline failed. Check logs.'
+            echo '❌ Pipeline failed! Sending notification email...'
+            emailext (
+                subject: "❌ Jenkins Build FAILED: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
+                body: """
+                    <h2 style="color: red;">Build Failed! ⚠️</h2>
+                    <p><strong>Job:</strong> ${env.JOB_NAME}</p>
+                    <p><strong>Build Number:</strong> ${env.BUILD_NUMBER}</p>
+                    <p><strong>Build URL:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                    <p><strong>Console Output:</strong> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
+                    <hr>
+                    <h3>Error Details:</h3>
+                    <pre style="background-color: #f4f4f4; padding: 10px;">${BUILD_LOG, maxLines=100}</pre>
+                    <hr>
+                    <p>Please check the console output for detailed error information.</p>
+                    <p><em>Build failed at: ${new Date()}</em></p>
+                """,
+                to: 'balifarah2001@gmail.com',
+                from: 'jenkins@devops.com',
+                replyTo: 'jenkins@devops.com',
+                mimeType: 'text/html',
+                attachLog: true
+            )
+        }
+        
+        always {
+            echo '🧹 Cleaning up...'
+            sh '''
+                # Clean up app if still running
+                pkill -f spring-petclinic || true
+                rm -f app.pid app.log || true
+                
+                # Clean Docker resources
+                docker system prune -f || true
+            '''
         }
     }
 }
