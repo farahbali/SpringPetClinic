@@ -63,12 +63,15 @@ pipeline {
 
           stage('SonarQube Analysis') {
             steps {
-                echo '🔍 Running SonarQube analysis...'
-                withSonarQubeEnv('SonarQube') {
+                echo '📊 Running SonarQube analysis...'
+                withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
                     sh '''
-                        mvn sonar:sonar \
+                        mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:3.9.1.2184:sonar \
                         -Dsonar.projectKey=springpetclinic \
-                        -Dsonar.projectName=SpringPetClinic
+                        -Dsonar.projectName=SpringPetClinic \
+                        -Dsonar.host.url=http://localhost:9000 \
+                        -Dsonar.token=${SONAR_TOKEN} \
+                        -Dsonar.java.binaries=target/classes
                     '''
                 }
             }
@@ -136,31 +139,64 @@ EOF
     
     }
 
-       post {
-        failure {
-            echo '❌ Pipeline failed! Sending notification email...'
+        post {
+        success {
+            echo '✅ Pipeline completed successfully!'
             emailext (
-                subject: "❌ Jenkins Build Failed: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
+                subject: "✅ Jenkins Build SUCCESS: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
                 body: """
-                    <h2>Build Failed</h2>
+                    <h2 style="color: green;">Build Successful! 🎉</h2>
                     <p><strong>Job:</strong> ${env.JOB_NAME}</p>
                     <p><strong>Build Number:</strong> ${env.BUILD_NUMBER}</p>
-                    <p><strong>Build URL:</strong>
-                    <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                    <p>Please check the console output for details.</p>
+                    <p><strong>Build URL:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                    <hr>
+                    <h3>Deployment Details:</h3>
+                    <ul>
+                        <li>Docker Image: ${IMAGE_NAME}:${IMAGE_TAG}</li>
+                        <li>Deployed to Kubernetes/Minikube</li>
+                        <li>All stages completed successfully</li>
+                    </ul>
+                    <p>Application is now running in Kubernetes cluster.</p>
                 """,
                 to: 'balifarah2001@gmail.com',
+                from: 'jenkins@devops.com',
+                replyTo: 'jenkins@devops.com',
                 mimeType: 'text/html'
             )
         }
-
-        success {
-            echo '✅ Pipeline completed successfully!'
+        
+        failure {
+            echo '❌ Pipeline failed! Sending notification email...'
+            emailext (
+                subject: "❌ Jenkins Build FAILED: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
+                body: """
+                    <h2 style="color: red;">Build Failed! ⚠️</h2>
+                    <p><strong>Job:</strong> ${env.JOB_NAME}</p>
+                    <p><strong>Build Number:</strong> ${env.BUILD_NUMBER}</p>
+                    <p><strong>Build URL:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                    <p><strong>Console Output:</strong> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
+                    <hr>
+                    <h3>Error Details:</h3>
+                    <pre style="background-color: #f4f4f4; padding: 10px;">${BUILD_LOG, maxLines=100}</pre>
+                    <hr>
+                    <p>Please check the console output for detailed error information.</p>
+                    <p><em>Build failed at: ${new Date()}</em></p>
+                """,
+                to: 'balifarah2001@gmail.com',
+                from: 'jenkins@devops.com',
+                replyTo: 'jenkins@devops.com',
+                mimeType: 'text/html',
+                attachLog: true
+            )
         }
-
+        
         always {
             echo '🧹 Cleaning up...'
-            sh 'docker system prune -f || true'
+            sh '''
+                pkill -f spring-petclinic || true
+                rm -f app.pid app.log || true
+                docker system prune -f || true
+            '''
         }
     }
 }
