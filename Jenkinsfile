@@ -13,6 +13,7 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 echo '📥 Checking out code from GitHub...'
@@ -24,9 +25,7 @@ pipeline {
         stage('Build Application') {
             steps {
                 echo '🧱 Building Spring Boot application...'
-                sh '''
-                    mvn clean package -DskipTests
-                '''
+                sh 'mvn clean package -DskipTests'
             }
         }
 
@@ -35,14 +34,10 @@ pipeline {
                 echo '🚀 Starting application...'
                 sh '''
                     pkill -f spring-petclinic || true
-
                     nohup java -jar target/*.jar > app.log 2>&1 &
                     echo $! > app.pid
-
-                    echo "Waiting for application to start..."
                     sleep 30
-
-                    curl -I http://localhost:8080 || exit 1
+                    curl -f http://localhost:8080
                 '''
             }
         }
@@ -50,22 +45,22 @@ pipeline {
         stage('Run Tests') {
             steps {
                 echo '🧪 Running tests...'
-                sh '''
-                    mvn test -DfailIfNoTests=false || true
-                '''
+                sh 'mvn test -DfailIfNoTests=false'
             }
             post {
                 always {
-                    junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                    junit allowEmptyResults: true,
+                          testResults: '**/target/surefire-reports/*.xml'
                 }
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
+                echo '🔍 Running SonarQube analysis...'
                 withSonarQubeEnv('SonarQube') {
                     sh '''
-                        mvn sonar:sonar \
+                        mvn org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
                         -Dsonar.projectKey=springpetclinic \
                         -Dsonar.projectName=SpringPetClinic
                     '''
@@ -96,7 +91,6 @@ COPY target/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","app.jar"]
 EOF
-
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                 '''
             }
@@ -122,25 +116,41 @@ EOF
             steps {
                 echo '☸️ Deploying to Kubernetes...'
                 sh '''
-                    # IMPORTANT: Minikube must already be running
                     kubectl apply -f kubernetes/deployment.yaml
                     kubectl apply -f kubernetes/service.yaml
-
                     kubectl rollout status deployment/springpetclinic-deployment
                     kubectl get pods
                     kubectl get services
                 '''
             }
         }
-    
     }
 
     post {
+
         success {
             echo '✅ Pipeline completed successfully!'
         }
+
         failure {
-            echo '❌ Pipeline failed. Check logs.'
+            echo '❌ Pipeline failed – sending email notification...'
+            emailext(
+                subject: "❌ Jenkins Build FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                <h2>Build Failed</h2>
+                <p><b>Job:</b> ${env.JOB_NAME}</p>
+                <p><b>Build:</b> ${env.BUILD_NUMBER}</p>
+                <p><b>URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                <p>Please check the Jenkins console output.</p>
+                """,
+                to: 'balifarah2001@gmail.com',
+                mimeType: 'text/html'
+            )
+        }
+
+        always {
+            echo '🧹 Cleaning Docker resources...'
+            sh 'docker system prune -f || true'
         }
     }
 }
