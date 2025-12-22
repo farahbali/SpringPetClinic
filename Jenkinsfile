@@ -5,6 +5,7 @@ pipeline {
         DOCKERHUB_USERNAME = 'farahbali'
         IMAGE_NAME = 'farahbali/springpetclinic'
         IMAGE_TAG = 'latest'
+        DOCKER_REGISTRY = 'docker.io'
     }
 
     tools {
@@ -33,11 +34,69 @@ pipeline {
             steps {
                 echo '🚀 Starting application...'
                 sh '''
+                    # Kill any existing instance
                     pkill -f spring-petclinic || true
+                    sleep 2
+                    
+                    # Check if port 8080 is already in use
+                    if netstat -tuln | grep :8080 > /dev/null; then
+                        echo "Port 8080 is already in use, trying to free it..."
+                        fuser -k 8080/tcp || true
+                        sleep 2
+                    fi
+                    
+                    # Start application in background
+                    echo "Starting application..."
                     nohup java -jar target/*.jar > app.log 2>&1 &
-                    echo $! > app.pid
-                    sleep 30
-                    curl -f http://localhost:8080
+                    APP_PID=$!
+                    echo $APP_PID > app.pid
+                    
+                    echo "Application PID: $APP_PID"
+                    echo "Waiting for application to start..."
+                    
+                    # Wait for application to be ready with timeout
+                    MAX_WAIT=90
+                    WAIT_INTERVAL=5
+                    ATTEMPTS=$((MAX_WAIT / WAIT_INTERVAL))
+                    
+                    for i in $(seq 1 $ATTEMPTS); do
+                        sleep $WAIT_INTERVAL
+                        
+                        # Check if process is still running
+                        if ! ps -p $APP_PID > /dev/null; then
+                            echo "❌ Application process died!"
+                            echo "Application logs:"
+                            cat app.log
+                            exit 1
+                        fi
+                        
+                        # Try to access health endpoint
+                        if curl -s -f http://localhost:8080/actuator/health > /dev/null 2>&1; then
+                            echo "✅ Application health check passed!"
+                            HEALTH_RESPONSE=$(curl -s http://localhost:8080/actuator/health)
+                            echo "Health Status: $HEALTH_RESPONSE"
+                            break
+                        fi
+                        
+                        # Also try the main endpoint
+                        if curl -s -f http://localhost:8080 > /dev/null 2>&1; then
+                            echo "✅ Application is responding!"
+                            break
+                        fi
+                        
+                        echo "Waiting for application... ($((i * WAIT_INTERVAL))s/$MAX_WAIT s)"
+                        
+                        if [ $i -eq $ATTEMPTS ]; then
+                            echo "❌ Application failed to start within $MAX_WAIT seconds"
+                            echo "Last 100 lines of logs:"
+                            tail -100 app.log
+                            echo "Checking port 8080:"
+                            netstat -tuln | grep :8080 || echo "Port 8080 not listening"
+                            exit 1
+                        fi
+                    done
+                    
+                    echo "✅ Application started successfully!"
                 '''
             }
         }
@@ -62,7 +121,9 @@ pipeline {
                     sh '''
                         mvn org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
                         -Dsonar.projectKey=springpetclinic \
-                        -Dsonar.projectName=SpringPetClinic
+                        -Dsonar.projectName=SpringPetClinic \
+                        -Dsonar.host.url=${SONAR_HOST_URL} \
+                        -Dsonar.login=${SONAR_AUTH_TOKEN}
                     '''
                 }
             }
@@ -73,8 +134,43 @@ pipeline {
                 echo '🛑 Stopping application...'
                 sh '''
                     if [ -f app.pid ]; then
-                        kill $(cat app.pid) || true
-                        rm app.pid
+                        PID=$(cat app.pid)
+                        echo "Found PID: $PID"
+                        if kill -0 $PID 2>/dev/null; then
+                            echo "Stopping process $PID gracefully..."
+                            kill $PID
+                            
+                            # Wait for graceful shutdown
+                            for i in {1..10}; do
+                                if ! kill -0 $PID 2>/dev/null; then
+                                    echo "Process stopped gracefully"
+                                    break
+                                fi
+                                sleep 1
+                            done
+                            
+                            # Force kill if still running
+                            if kill -0 $PID 2>/dev/null; then
+                                echo "Force killing process $PID..."
+                                kill -9 $PID
+                            fi
+                        else
+                            echo "Process $PID not running"
+                        fi
+                        rm -f app.pid
+                    else
+                        echo "No PID file found, trying to kill by name..."
+                        pkill -f spring-petclinic || true
+                    fi
+                    
+                    # Clean up log file
+                    rm -f app.log 2>/dev/null || true
+                    
+                    # Verify port is free
+                    sleep 2
+                    if netstat -tuln | grep :8080 > /dev/null; then
+                        echo "Warning: Port 8080 is still in use"
+                        fuser -k 8080/tcp || true
                     fi
                 '''
             }
@@ -84,14 +180,25 @@ pipeline {
             steps {
                 echo '🐳 Building Docker image...'
                 sh '''
-                    cat > Dockerfile << 'EOF'
+                    # Create Dockerfile if not exists
+                    if [ ! -f Dockerfile ]; then
+                        cat > Dockerfile << 'EOF'
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 COPY target/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","app.jar"]
 EOF
-                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                    fi
+                    
+                    # Build with buildkit for better performance
+                    DOCKER_BUILDKIT=1 docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                    
+                    # Also tag with build number
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:${BUILD_NUMBER}
+                    
+                    echo "✅ Docker image built successfully"
+                    docker images | grep ${IMAGE_NAME}
                 '''
             }
         }
@@ -105,8 +212,16 @@ EOF
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
                     sh '''
+                        echo "Logging in to Docker Hub..."
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        
+                        echo "Pushing image ${IMAGE_NAME}:${IMAGE_TAG}..."
                         docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                        
+                        echo "Pushing image ${IMAGE_NAME}:${BUILD_NUMBER}..."
+                        docker push ${IMAGE_NAME}:${BUILD_NUMBER}
+                        
+                        echo "✅ Images pushed successfully to Docker Hub"
                     '''
                 }
             }
@@ -116,41 +231,195 @@ EOF
             steps {
                 echo '☸️ Deploying to Kubernetes...'
                 sh '''
-                    kubectl apply -f kubernetes/deployment.yaml
-                    kubectl apply -f kubernetes/service.yaml
-                    kubectl rollout status deployment/springpetclinic-deployment
-                    kubectl get pods
-                    kubectl get services
+                    # Verify Minikube is running
+                    if ! minikube status | grep -q "Running"; then
+                        echo "❌ Minikube is not running. Starting Minikube..."
+                        minikube start || { echo "Failed to start Minikube"; exit 1; }
+                    fi
+                    
+                    # Set Minikube docker env if needed
+                    eval $(minikube docker-env 2>/dev/null) || true
+                    
+                    echo "Applying Kubernetes manifests..."
+                    # Create namespace if it doesn't exist
+                    kubectl create namespace spring-petclinic 2>/dev/null || true
+                    
+                    # Deploy with namespace
+                    kubectl apply -f kubernetes/deployment.yaml -n spring-petclinic
+                    kubectl apply -f kubernetes/service.yaml -n spring-petclinic
+                    
+                    echo "Waiting for deployment to be ready..."
+                    kubectl rollout status deployment/springpetclinic-deployment -n spring-petclinic --timeout=300s
+                    
+                    echo "✅ Deployment completed"
+                    kubectl get pods -n spring-petclinic -o wide
+                    kubectl get svc -n spring-petclinic -o wide
+                '''
+            }
+        }
+
+        stage('Verify Minikube Deployment') {
+            steps {
+                echo '✅ Verifying application on Minikube...'
+                sh '''
+                    # Get Minikube IP
+                    MINIKUBE_IP=$(minikube ip)
+                    echo "Minikube IP: $MINIKUBE_IP"
+                    
+                    # Get NodePort
+                    NODE_PORT=$(kubectl get svc springpetclinic-service -n spring-petclinic -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null)
+                    
+                    if [ -z "$NODE_PORT" ]; then
+                        echo "❌ Could not get NodePort for service"
+                        kubectl describe svc springpetclinic-service -n spring-petclinic
+                        exit 1
+                    fi
+                    
+                    echo "Service NodePort: $NODE_PORT"
+                    echo "Testing application at http://$MINIKUBE_IP:$NODE_PORT"
+                    
+                    # Test application health with retries
+                    MAX_RETRIES=10
+                    RETRY_INTERVAL=10
+                    
+                    for i in $(seq 1 $MAX_RETRIES); do
+                        echo "Health check attempt $i/$MAX_RETRIES..."
+                        
+                        if curl -s -f "http://$MINIKUBE_IP:$NODE_PORT/actuator/health" > /dev/null 2>&1; then
+                            echo "✅ Application health check passed!"
+                            curl -s "http://$MINIKUBE_IP:$NODE_PORT/actuator/health" | python -m json.tool 2>/dev/null || \
+                            curl -s "http://$MINIKUBE_IP:$NODE_PORT/actuator/health"
+                            break
+                        fi
+                        
+                        if curl -s -f "http://$MINIKUBE_IP:$NODE_PORT" > /dev/null 2>&1; then
+                            echo "✅ Application is responding!"
+                            break
+                        fi
+                        
+                        if [ $i -eq $MAX_RETRIES ]; then
+                            echo "❌ Application failed to respond after $MAX_RETRIES attempts"
+                            echo "Pod logs:"
+                            kubectl logs deployment/springpetclinic-deployment -n spring-petclinic --tail=50
+                            echo "Pod description:"
+                            kubectl describe pods -l app=springpetclinic -n spring-petclinic
+                            exit 1
+                        fi
+                        
+                        sleep $RETRY_INTERVAL
+                    done
+                    
+                    echo "✅ Application is successfully running on Minikube!"
+                    echo "🌐 Access URL: http://$MINIKUBE_IP:$NODE_PORT"
+                    
+                    # Alternative: Use minikube service command
+                    echo "Alternative access method:"
+                    minikube service springpetclinic-service -n spring-petclinic --url 2>/dev/null || true
                 '''
             }
         }
     }
 
     post {
-
         success {
             echo '✅ Pipeline completed successfully!'
+            script {
+                def minikube_ip = sh(script: 'minikube ip 2>/dev/null || echo "localhost"', returnStdout: true).trim()
+                def node_port = sh(script: 'kubectl get svc springpetclinic-service -n spring-petclinic -o jsonpath=\'{.spec.ports[0].nodePort}\' 2>/dev/null || echo "N/A"', returnStdout: true).trim()
+                
+                emailext(
+                    subject: "✅ Jenkins Build SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                    body: """
+                    <h2>Build Successful! 🎉</h2>
+                    <p><b>Job:</b> ${env.JOB_NAME}</p>
+                    <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
+                    <p><b>Status:</b> <span style="color: green; font-weight: bold;">SUCCESS</span></p>
+                    <p><b>Build URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                    <p><b>Application URL:</b> <a href="http://${minikube_ip}:${node_port}">http://${minikube_ip}:${node_port}</a></p>
+                    <p><b>Docker Image:</b> ${env.IMAGE_NAME}:${env.IMAGE_TAG}</p>
+                    <p><b>Pipeline Duration:</b> ${currentBuild.durationString}</p>
+                    <hr>
+                    <p>Application deployed successfully to Minikube Kubernetes cluster.</p>
+                    """,
+                    to: 'balifarah2001@gmail.com',
+                    mimeType: 'text/html'
+                )
+            }
         }
-
+        
         failure {
             echo '❌ Pipeline failed – sending email notification...'
+            script {
+                def failedStage = currentBuild.result
+                def duration = currentBuild.durationString
+                
+                emailext(
+                    subject: "❌ Jenkins Build FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                    body: """
+                    <h2>Build Failed ⚠️</h2>
+                    <p><b>Job:</b> ${env.JOB_NAME}</p>
+                    <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
+                    <p><b>Status:</b> <span style="color: red; font-weight: bold;">FAILED</span></p>
+                    <p><b>Build URL:</b> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
+                    <p><b>Pipeline Duration:</b> ${duration}</p>
+                    <p><b>Failed Stage:</b> ${failedStage}</p>
+                    <hr>
+                    <p>Please check the Jenkins console output for details.</p>
+                    <p>To investigate:</p>
+                    <ol>
+                        <li>Check the failed stage in the pipeline</li>
+                        <li>Review application logs if available</li>
+                        <li>Verify Minikube/Kubernetes cluster status</li>
+                        <li>Check Docker image build and push logs</li>
+                    </ol>
+                    <p><a href="${env.BUILD_URL}console">Click here to view the full build log</a></p>
+                    """,
+                    to: 'balifarah2001@gmail.com',
+                    mimeType: 'text/html',
+                    attachLog: true,  // This attaches the full build log
+                    compressLog: true
+                )
+            }
+        }
+        
+        unstable {
+            echo '⚠️ Pipeline unstable – sending email notification...'
             emailext(
-                subject: "❌ Jenkins Build FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                subject: "⚠️ Jenkins Build UNSTABLE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                 body: """
-                <h2>Build Failed</h2>
+                <h2>Build Unstable ⚠️</h2>
                 <p><b>Job:</b> ${env.JOB_NAME}</p>
                 <p><b>Build:</b> ${env.BUILD_NUMBER}</p>
                 <p><b>URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                <p>Please check the Jenkins console output.</p>
+                <p><b>Status:</b> UNSTABLE (Tests may have failed but pipeline continued)</p>
                 """,
                 to: 'balifarah2001@gmail.com',
                 mimeType: 'text/html'
             )
         }
-
+        
         always {
-            echo '🧹 Cleaning Docker resources...'
-            sh 'docker system prune -f || true'
+            echo '🧹 Cleaning up resources...'
+            sh '''
+                # Clean Docker resources
+                echo "Cleaning Docker resources..."
+                docker system prune -f || true
+                
+                # Stop application if still running (safety check)
+                if [ -f app.pid ]; then
+                    PID=$(cat app.pid 2>/dev/null)
+                    kill $PID 2>/dev/null || true
+                    rm -f app.pid app.log 2>/dev/null || true
+                fi
+                
+                # Kill any remaining spring processes
+                pkill -f spring-petclinic || true
+                
+                echo "Cleanup completed"
+            '''
+            
+            // Clean workspace (optional)
+            cleanWs()
         }
     }
 }
