@@ -24,9 +24,7 @@ pipeline {
         stage('Build Application') {
             steps {
                 echo '🧱 Building Spring Boot application...'
-                sh '''
-                    mvn clean package -DskipTests
-                '''
+                sh 'mvn clean package -DskipTests'
             }
         }
 
@@ -35,14 +33,25 @@ pipeline {
                 echo '🚀 Starting application...'
                 sh '''
                     pkill -f spring-petclinic || true
+                    fuser -k 8080/tcp || true
+                    sleep 5
 
                     nohup java -jar target/*.jar > app.log 2>&1 &
                     echo $! > app.pid
 
                     echo "Waiting for application to start..."
-                    sleep 30
-
-                    curl -I http://localhost:8080 || exit 1
+                    for i in {1..60}; do
+                        if curl -f http://localhost:8080 >/dev/null 2>&1; then
+                            echo "Application started successfully!"
+                            exit 0
+                        fi
+                        echo "Waiting... ($i/60)"
+                        sleep 2
+                    done
+                    
+                    echo "Application failed to start!"
+                    cat app.log
+                    exit 1
                 '''
             }
         }
@@ -50,9 +59,7 @@ pipeline {
         stage('Run Tests') {
             steps {
                 echo '🧪 Running tests...'
-                sh '''
-                    mvn test -DfailIfNoTests=false || true
-                '''
+                sh 'mvn test -DfailIfNoTests=false || true'
             }
             post {
                 always {
@@ -85,6 +92,8 @@ pipeline {
                         kill $(cat app.pid) || true
                         rm app.pid
                     fi
+                    pkill -f spring-petclinic || true
+                    fuser -k 8080/tcp || true
                 '''
             }
         }
@@ -93,13 +102,15 @@ pipeline {
             steps {
                 echo '🐳 Building Docker image...'
                 sh '''
-                    cat > Dockerfile << 'EOF'
+                    if [ ! -f Dockerfile ]; then
+                        cat > Dockerfile << 'EOF'
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 COPY target/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","app.jar"]
 EOF
+                    fi
 
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                 '''
@@ -117,22 +128,34 @@ EOF
                     sh '''
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
                         docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                        docker logout
                     '''
                 }
             }
         }
 
-        stage('Deploy to Kubernetes (Minikube)') {
+        stage('Deploy to Kubernetes') {
             steps {
                 echo '☸️ Deploying to Kubernetes...'
                 sh '''
-                    # IMPORTANT: Minikube must already be running
+                    sed -i "s|image:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|g" kubernetes/deployment.yaml
+                    
                     kubectl apply -f kubernetes/deployment.yaml
                     kubectl apply -f kubernetes/service.yaml
 
-                    kubectl rollout status deployment/springpetclinic-deployment
+                    kubectl rollout status deployment/springpetclinic-deployment --timeout=5m
+                    
+                    echo "=== Deployments ==="
+                    kubectl get deployments
+                    echo ""
+                    echo "=== Pods ==="
                     kubectl get pods
+                    echo ""
+                    echo "=== Services ==="
                     kubectl get services
+                    echo ""
+                    echo "=== Application URL ==="
+                    minikube service springpetclinic-service --url || echo "Get URL: minikube service springpetclinic-service --url"
                 '''
             }
         }
@@ -192,11 +215,8 @@ EOF
         always {
             echo '🧹 Cleaning up...'
             sh '''
-                # Clean up app if still running
                 pkill -f spring-petclinic || true
                 rm -f app.pid app.log || true
-                
-                # Clean Docker resources
                 docker system prune -f || true
             '''
         }
