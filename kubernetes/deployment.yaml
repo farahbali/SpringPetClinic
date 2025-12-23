@@ -19,4 +19,4 @@ spec:
           image: farahbali/springpetclinic:IMAGE_TAG   # <-- placeholder
           imagePullPolicy: Always
           ports:
-            - containerPort: 8080
+            - containerPort: 8085
